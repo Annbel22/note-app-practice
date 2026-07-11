@@ -23,6 +23,8 @@ class MainWindow(QMainWindow):
         self.auto_save_timer.setSingleShot(True)
         self.auto_save_timer.timeout.connect(self._auto_save)
 
+        self._updating_list = False
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -38,7 +40,6 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout()
         self.centralWidget().setLayout(main_layout)
 
-        # Левая панель
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
 
@@ -56,7 +57,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.btn_delete)
         left_layout.addLayout(btn_layout)
 
-        # Правая панель
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
 
@@ -89,7 +89,6 @@ class MainWindow(QMainWindow):
         splitter.setSizes([300, 700])
         main_layout.addWidget(splitter)
 
-        # QSS-стилизация
         self.setStyleSheet("""
             QMainWindow { background-color: #f5f5f5; }
             QListWidget {
@@ -142,10 +141,20 @@ class MainWindow(QMainWindow):
         title = self.title_edit.text().strip()
         content = self.content_edit.toPlainText()
         self.db.update(self.current_note_id, title, content)
-        self._refresh_notes_list(keep_selection=True)
+        self._update_note_in_list(self.current_note_id, title)
         self.status_bar.showMessage("Заметка сохранена", 2000)
 
+    def _update_note_in_list(self, note_id, new_title):
+        """Обновляет заголовок заметки в списке без перезагрузки всего списка."""
+        for i in range(self.notes_list.count()):
+            item = self.notes_list.item(i)
+            if item.data(Qt.UserRole) == note_id:
+                item.setText(new_title if new_title else "Без заголовка")
+                break
+
     def _refresh_notes_list(self, keep_selection=False):
+        """Обновляет список заметок из БД."""
+        self._updating_list = True
         current_id = self.current_note_id
         self.notes_list.clear()
         notes = self.db.get_all()
@@ -164,8 +173,12 @@ class MainWindow(QMainWindow):
                 self.notes_list.setCurrentRow(0)
             else:
                 self._clear_fields()
+        self._updating_list = False
 
     def _on_select_note(self):
+        if self._updating_list:
+            return
+
         if self.current_note_id is not None:
             if self.auto_save_timer.isActive():
                 self.auto_save_timer.stop()
@@ -286,11 +299,13 @@ class MainWindow(QMainWindow):
             self._refresh_notes_list(keep_selection=True)
             return
         notes = self.db.search(text.strip())
+        self._updating_list = True  
         self.notes_list.clear()
         for note in notes:
             item = QListWidgetItem(note["title"] if note["title"] else "Без заголовка")
             item.setData(Qt.UserRole, note["id"])
             self.notes_list.addItem(item)
+        self._updating_list = False
         if self.notes_list.count() > 0:
             self.notes_list.setCurrentRow(0)
         else:
